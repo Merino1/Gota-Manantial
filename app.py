@@ -79,7 +79,7 @@ def login():
             session['uid']=u.id; session['rol']=u.rol
             return redirect('/admin/pedidos' if u.rol in ['admin','superadmin'] else '/chofer/panel')
     logo=get_logo()
-    cont=f"<div class='row justify-content-center'><div class='col-11 col-md-4 card p-4 shadow mt-5 text-center'><img src='{logo}' style='height:90px;object-fit:contain'><h5 style='color:#0a7a5c;font-weight:900'>GOTA DE MANANTIAL</h5><form method='post'><input name='username' class='form-control mb-2' placeholder='Usuario' required><input name='password' type='password' class='form-control mb-2' placeholder='Pass' required><button class='btn btn-primary w-100'>Entrar</button></form><div class='mt-2 text-start' style='font-size:11px'>sistemas / sistemas123<br>admin / admin123<br>chofer1 / 123</div></div></div>"
+    cont=f"<div class='row justify-content-center'><div class='col-11 col-md-4 card p-4 shadow mt-5 text-center'><img src='{logo}' style='height:90px;object-fit:contain'><h5 style='color:#0a7a5c;font-weight:900'>GOTA DE MANANTIAL</h5><form method='post'><input name='username' class='form-control mb-2' placeholder='Usuario' required><input name='password' type='password' class='form-control mb-2' placeholder='Pass' required><button class='btn btn-primary w-100'>Entrar</button></form></div></div>"
     return page(cont, rol='login')
 
 @app.route('/logout')
