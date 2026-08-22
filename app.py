@@ -105,6 +105,7 @@ def obtener_chofer_mas_cercano():
 # ==================== PLANTILLAS HTML ====================
 
 LOGIN_HTML = """
+<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;font-family:system-ui;background:#e0f7fa;display:flex;justify-content:center;align-items:center;height:100vh">
 <div style="background:white;padding:35px;border-radius:20px;width:360px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.1)">
 <img src="/logo.png" style="width:180px" onerror="this.outerHTML='<div style=\\'background:#0891b2;color:white;padding:12px;border-radius:12px;font-weight:bold\\'>💧 GOTA DE MANANTIAL<br><small style=\\'font-weight:normal\\'>Mexicali</small></div>'">
@@ -114,6 +115,8 @@ LOGIN_HTML = """
 </div></body>"""
 
 ADMIN_HTML = """
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 .pedido-row{border-bottom:1px solid #eee;padding:10px 8px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
@@ -122,17 +125,20 @@ ADMIN_HTML = """
 .dropdown{position:absolute;right:0;top:28px;background:white;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:160px;display:none;z-index:99}
 .dropdown a{display:block;padding:8px 12px;text-decoration:none;color:#333;font-size:13px}
 .dropdown a:hover{background:#f1f5f9}
+.admin-grid { display: grid; grid-template-columns: 1fr 360px; gap: 12px; }
+@media (max-width: 768px) { .admin-grid { grid-template-columns: 1fr; } }
 </style>
+</head>
 <body style="margin:0;font-family:system-ui;background:#f1f5f9">
 <div style="background:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:8px"><img src="/logo.png" style="height:38px" onerror="this.outerHTML='<b>💧 GOTA MXLI</b>'"><b>{{nombre}} ({{rol}})</b></div><a href="/logout">Salir</a></div>
-<div style="padding:12px;max-width:1200px;margin:auto;display:grid;grid-template-columns:1fr 360px;gap:12px">
+<div class="admin-grid" style="padding:12px;max-width:1200px;margin:auto">
 <div>
 <div style="background:white;border-radius:12px;padding:12px;margin-bottom:12px"><h3>Nuevo Pedido - Mexicali</h3><form action="/pedido/nuevo" method="post" style="display:flex;gap:6px;flex-wrap:wrap"><input name="cliente" placeholder="Cliente" required><input name="direccion" placeholder="Direccion" required><input name="cantidad" type="number" value="1" style="width:60px"><input name="precio" type="number" value="22" style="width:60px"><select name="chofer_id"><option value="auto">🤖 Asignar Chofer Más Cercano</option>{% for ch in choferes %}<option value="{{ch.id}}">👤 {{ch.nombre}}</option>{% endfor %}</select><button>Agregar Pedido</button></form></div>
 <div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;padding:12px;margin-bottom:12px"><h3>Solicitudes de precio</h3>{% for s in solicitudes %}<div style="background:white;border:1px solid #fbbf24;padding:8px;border-radius:8px;margin-bottom:6px;font-size:13px"><b>{{s.cantidad}}x {{s.tamano}} ${{s.precio_estaba}}->${{s.precio_quedo}} = ${{s.diferencia}}</b><br>{{dict.get(s.chofer_id,'-')}} - {{s.direccion}} - {{s.motivo}}<br><a href="/autorizar/{{s.id}}" style="background:#16a34a;color:white;padding:5px 10px;border-radius:5px;text-decoration:none">Aceptar</a> <a href="/rechazar/{{s.id}}" style="background:#dc2626;color:white;padding:5px 10px;border-radius:5px;text-decoration:none">Rechazar</a></div>{% else %}<p style="font-size:13px;color:#666">Sin solicitudes</p>{% endfor %}</div>
 <div style="background:white;border-radius:12px;padding:12px"><h3>Pedidos Registrados</h3>
 {% for p in pedidos %}
-<div class="pedido-row"><span><b>{{p.cliente}}</b> - {{p.direccion}} - {{p.cantidad}}x ${{p.precio}} - 
-<b style="color:{% if p.estado=='Entregado' %}green{% elif p.estado=='No salio nadie' %}red{% else %}orange{% endif %}">{{p.estado}}</b> - 
+<div class="pedido-row"><span><b>{{p.cliente}}</b> - {{p.direccion}} - {{p.cantidad}}x ${{p.precio}} -
+<b style="color:{% if p.estado=='Entregado' %}green{% elif p.estado=='No salio nadie' %}red{% else %}orange{% endif %}">{{p.estado}}</b> -
 <span style="color:#0891b2">{{dict.get(p.chofer_id,'Sin asignar')}}</span></span>
 <div style="position:relative"><div class="menu-btn" onclick="toggleMenu({{p.id}})">⋮</div><div id="menu-{{p.id}}" class="dropdown"><a href="/pedido/entregar/{{p.id}}">✅ Entregado</a><a href="/pedido/no_salio/{{p.id}}">❌ No Salió Nadie</a><div style="border-top:1px solid #eee;padding:6px 12px;font-size:11px;color:#888">Reasignar a:</div>{% for ch in choferes %}<a href="/pedido/mover/{{p.id}}?chofer_id={{ch.id}}">👤 {{ch.nombre}}</a>{% endfor %}</div></div></div>
 {% endfor %}</div>
@@ -159,7 +165,7 @@ Agua: $<input name="precio_agua" value="{{u.precio_agua}}" style="width:35px">
 Tarjeta: $<input name="valor_tarjeta" value="{{u.valor_tarjeta}}" style="width:35px">
 <button style="font-size:10px">Guardar</button>
 </form><br>
-<a href="/mapa/detallado/{{u.id}}" style="color:#0891b2">📍 Ver Ruta GPS</a> | 
+<a href="/mapa/detallado/{{u.id}}" style="color:#0891b2">📍 Ver Ruta GPS</a> |
 {% endif %}
 <a href="/usuario/reset/{{u.id}}">Reset Pass</a> | <a href="/usuario/borrar/{{u.id}}" style="color:red">Baja</a>
 </div>
@@ -173,7 +179,8 @@ function toggleMenu(id){
   var m=document.getElementById('menu-'+id); m.style.display = m.style.display==='block' ? 'none' : 'block';
 }
 document.addEventListener('click', function(e){ if(!e.target.classList.contains('menu-btn')){ if(!e.target.closest('.dropdown')) document.querySelectorAll('.dropdown').forEach(d=>d.style.display='none'); }});
-var map=L.map('map').setView([32.6245, -115.452],12); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+var map=L.map('map').setView([32.6245, -115.452],12); 
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 var markers={};
 function cargar(){fetch('/api/ubicaciones').then(r=>r.json()).then(d=>{d.forEach(c=>{ if(markers[c.id]) map.removeLayer(markers[c.id]); markers[c.id]=L.marker([c.lat,c.lng]).addTo(map).bindPopup(c.nombre) })})}
 cargar(); setInterval(cargar,10000);
@@ -181,6 +188,7 @@ cargar(); setInterval(cargar,10000);
 </body>"""
 
 CHOFER_HTML = """
+<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;font-family:system-ui;background:#f0fdf4">
 <audio id="alerta-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
 
@@ -307,6 +315,7 @@ MAPA_DETALLADO_HTML = """
 <html>
 <head>
     <title>Mapa Detallado - {{ ch.nombre }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>#map { height: 90vh; width: 100%; }</style>
@@ -319,7 +328,7 @@ MAPA_DETALLADO_HTML = """
     <div id="map"></div>
     <script>
         var map = L.map('map').setView([32.6245, -115.452], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
         var puntos = {{ puntos|tojson }};
         var latlngs = puntos.map(p => [p.lat, p.lng]);
@@ -329,8 +338,7 @@ MAPA_DETALLADO_HTML = """
         }
     </script>
 </body>
-</html>
-"""
+</html>"""
 
 # ==================== MIDDLEWARES / DECORADORES ====================
 
