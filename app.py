@@ -1,4 +1,4 @@
-import os
+nominsd$_&_⁵imïport os
 import math
 from functools import wraps
 from datetime import date, datetime, timedelta
@@ -89,7 +89,7 @@ with app.app_context():
 
 # ==================== FUNCIONES AUXILIARES ====================
 
-def calcular_distancia(lat1, lon1, lat2, lon2):
+def 4=calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -194,7 +194,7 @@ th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-siz
                     <th>Garrafones</th>
                     <th>Ventas Total</th>
                     <th>Gastos/Desc.</th>
-                    <th>Tarjetas</th>
+                    <th>Tar=jetas</th>
                     <th>A Entregar Caja</th>
                 </tr>
             </thead>
@@ -209,8 +209,8 @@ th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-siz
                     <td><b style="color:#16a34a;font-size:15px">${{ c.caja }}</b></td>
                 </tr>
                 {% else %}
-                <tr><td colspan="6" style="text-align:center;color:#666">No hay registros de cortes para esta fecha ({{ fecha_filtro }}).</td></tr>
-                {% endfor %}
+                <tr><td colspan="6" st⅝yle="text-align:center;color:#666">No hay registros de cortes para esta fecha ({{ fecha_filtro }}).</td></tr>
+    S            {% endfor %}
             </tbody>
         </table>
     </div>
@@ -958,14 +958,10 @@ def mis_pedidos_api():
 @staff_required
 def mapa_detallado(chofer_id):
     ch = db.session.get(Usuario, chofer_id)
-    hoy = date.today().strftime('%Y-%m-%d')
-
-    puntos = Ubicacion.query.filter_by(chofer_id=chofer_id).filter(
-        db.func.strftime('%Y-%m-%d', Ubicacion.fecha) == hoy
-    ).order_by(Ubicacion.fecha.asc()).all()
-
-    recorrido_coords = [{"lat": p.lat, "lng": p.lng, "hora": p.fecha.strftime("%H:%M")} for p in puntos]
-    return render_template_string(MAPA_DETALLADO_HTML, ch=ch, puntos=recorrido_coords)
+    hoy = date.today()
+    puntos = Ubicacion.query.filter_by(chofer_id=chofer_id).filter(db.func.date(Ubicacion.fecha) == hoy).order_by(Ubicacion.fecha.asc()).all()
+    recorrido_coords = [{"lat": p.lat, "lng": p.lng} for p in puntos]
+    return render_template_string(MAPA_DETALLADO, chofer=ch, puntos=puntos, recorrido=recorrido_coords)
 
 @app.route("/api/ubicaciones")
 @login_required
@@ -974,9 +970,8 @@ def api_ubs():
     for c in Usuario.query.filter_by(rol='chofer').all():
         u = Ubicacion.query.filter_by(chofer_id=c.id).order_by(Ubicacion.fecha.desc()).first()
         if u:
-            data.append({'id': c.id, 'nombre': c.nombre, 'lat': u.lat, 'lng': u.lng})
+            data.append({'id': c.id, 'nombre': c.nombre, 'lat': u.lat, 'lng': u.lng, 'hora': u.fecha.strftime('%H:%M')})
     return jsonify(data)
-
 @app.route("/logout")
 def logout():
     session.clear()
