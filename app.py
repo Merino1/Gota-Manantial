@@ -13,7 +13,13 @@ db_url = os.environ.get('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///manantial.db'
+db_url = os.getenv('DATABASE_URL')
+if db_url and db_url.startswith('postgres://'):
+    db_url = db_url.replace('postgres://','postgresql://',1)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True, "pool_recycle": 300, "connect_args": {"keepalives": 1, "keepalives_idle": 30}}
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+# ORIGINAL_LINE_ABAJO
+# = db_url or 'sqlite:///manantial.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -1000,3 +1006,13 @@ if __name__ == "__main__":
             db.session.commit()
 
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)), debug=True)
+
+
+@app.route('/health')
+def health():
+    from sqlalchemy import text
+    try:
+        db.session.execute(text('SELECT 1'))
+        return 'ok', 200
+    except Exception as e:
+        return f'waking: {e}', 200
