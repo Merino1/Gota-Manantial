@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+body{margin:0;background:#111;color:#fff;font-family:sans-serif}
+#map{height:55vh;width:100%;border-radius:12px}
+.card{background:#1a1a1a;padding:10px;border-radius:12px;margin:8px}
+.btn{padding:10px;border:0;border-radius:8px;font-weight:800;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div style="padding:10px">
+  <div style="display:flex;gap:6px">
+    <input id="q" placeholder="Caracoles 266" style="flex:1;padding:12px;border-radius:8px;border:0;background:#222;color:#fff">
+    <button onclick="buscar()" class="btn" style="background:#00ff88">🔍</button>
+  </div>
+  <div style="display:flex;gap:6px;margin:8px 0">
+    <button onclick="setTipo('calle')" id="btnCalle" class="btn" style="flex:1;background:#333;color:#fff">🗺️ Calles</button>
+    <button onclick="setTipo('sate')" id="btnSate" class="btn" style="flex:1;background:#00ff88;color:#000">🛰️ Satélite</button>
+  </div>
+  <div id="map"></div>
+
+  <div class="card">
+    <b>Chofer: {{chofer_actual.nombre if chofer_actual else 'ADMIN'}}</b>
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+      <button onclick="accion('inicio_ruta')" class="btn" style="background:#00ff88;color:#000">▶️ Entré a ruta</button>
+      <button onclick="accion('comida_inicio')" class="btn" style="background:#ffaa00;color:#000">🍔 Salí a comer</button>
+      <button onclick="accion('comida_fin')" class="btn" style="background:#00aaff;color:#000">↩️ Regresé de comer</button>
+      <button onclick="accion('fin_ruta')" class="btn" style="background:#ff4444;color:#fff">⏹️ Salida de ruta</button>
+    </div>
+    <div id="infoParadas" style="margin-top:8px;font-size:13px;color:#aaa"></div>
+  </div>
+
+  <div class="card">
+    <form action="/pedido/nuevo" method="POST">
+      <input id="dirInput" name="direccion" placeholder="Dirección del pedido" required style="width:100%;padding:12px;border-radius:8px;border:0;background:#222;color:#fff;margin-bottom:6px">
+      <input type="hidden" name="lat" id="latInput"><input type="hidden" name="lng" id="lngInput">
+      <div style="display:flex;gap:6px">
+        <input name="cliente" placeholder="Cliente" required style="flex:1;padding:12px;border-radius:8px;border:0;background:#222;color:#fff">
+        <input name="cantidad" type="number" value="1" min="1" style="width:70px;padding:12px;border-radius:8px;border:0;background:#222;color:#fff">
+      </div>
+      <select name="chofer_id" style="width:100%;margin-top:6px;padding:12px;border-radius:8px;background:#222;color:#fff;border:0">
+        <option value="auto">-- Auto (asigna el más cercano) --</option>
+        {% for c in choferes %}<option value="{{c.id}}">{{c.nombre}} - {{c.vehiculo}}</option>{% endfor %}
+      </select>
+      <button type="submit" style="width:100%;margin-top:8px;padding:14px;background:#00ff88;border:0;border-radius:10px;font-weight:900;color:#000">✅ CREAR PEDIDO</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const PLANTA=[32.58115,-115.36780];
+let map=L.map('map').setView(PLANTA,15);
+let calle=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+let sate=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19});
+let plantaM=L.marker(PLANTA).addTo(map).bindPopup("🏭 GOTA DE MANANTIAL<br>Microlita 1309").openPopup();
+let markersChofer={}, rutas={};
+
+function setTipo(t){
+  document.getElementById('btnCalle').style.background=t=='calle'?'#00ff88':'#333';
+  document.getElementById('btnSate').style.background=t=='sate'?'#00ff88':'#333';
+  if(t=='calle'){ map.removeLayer(sate); map.addLayer(calle); } else { map.removeLayer(calle); map.addLayer(sate); }
+}
+setTipo('sate');
+
+async function buscar(){
+  let q=document.getElementById('q').value; if(!q) return;
+  let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q+', Mexicali')}&limit=1`);
+  let d=await r.json(); if(!d[0]) return alert("No encontré");
+  let lat=+d[0].lat, lng=+d[0].lon; map.setView([lat,lng],18);
+  L.marker([lat,lng]).addTo(map).bindPopup(q).openPopup();
+  document.getElementById('dirInput').value=q; document.getElementById('latInput').value=lat; document.getElementById('lngInput').value=lng;
+}
+map.on('click', e=>{ document.getElementById('latInput').value=e.latlng.lat; document.getElementById('lngInput').value=e.latlng.lng; L.marker(e.latlng).addTo(map); });
+
+function accion(tipo){ fetch('/chofer/accion/'+tipo).then(()=>alert(tipo+" registrado")); }
+
+async function cargarChoferes(){
+  try{
+    let r=await fetch('/get_choferes'); let data=await r.json();
+    for(let id in data){
+      let c=data[id];
+      if(!markersChofer[id]) markersChofer[id]=L.marker([c.lat,c.lng]).addTo(map);
+      else markersChofer[id].setLatLng([c.lat,c.lng]);
+      markersChofer[id].bindPopup(`${c.nombre||'Chofer '+id} - ${c.estado||'en_ruta'}`);
+    }
+    let rr=await fetch('/get_recorridos'); let rec=await rr.json();
+    document.getElementById('infoParadas').innerHTML='';
+    for(let id in rec){
+      let pts=rec[id];
+      if(rutas[id]) map.removeLayer(rutas[id]);
+      rutas[id]=L.polyline(pts.map(p=>[p.lat,p.lng]),{color:'red',weight:3}).addTo(map);
+      pts.forEach(p=>{
+        if(p.tiempo_parado_min>2){
+          L.circleMarker([p.lat,p.lng],{radius:8,color:'yellow'}).addTo(map).bindPopup(`Parada: ${p.tiempo_parado_min} min<br>${p.evento||''}`);
+          document.getElementById('infoParadas').innerHTML+=`🚚 ${id} parado ${p.tiempo_parado_min}min en ${p.lat.toFixed(4)}<br>`;
+        }
+      });
+    }
+  }catch(e){}
+}
+setInterval(cargarChoferes,4000); cargarChoferes();
+
+// mandar gps si es chofer
+if(navigator.geolocation){
+  setInterval(()=>{ navigator.geolocation.getCurrentPosition(pos=>{
+    fetch('/chofer/update_gps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude})});
+  }); },15000);
+}
+</script>
+</body>
+</html>

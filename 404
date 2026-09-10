@@ -1,0 +1,37 @@
+import urllib.parse  # Para procesar el texto y que WhatsApp lo entienda
+from datetime import datetime
+from flask import Flask, render_template, request
+
+app = Flask(__name__)
+
+# --- TU CONFIGURACIÓN DE TU BASE DE DATOS AQUÍ ---
+# db = SQLAlchemy(app)
+
+@app.errorhandler(404)
+def pagina_no_encontrada(error):
+    # 1. Detectar la URL que falló
+    url_fallida = request.url
+    fecha_hora = datetime.now().strftime("%d/%m/%Y a las %H:%M")
+    
+    # 2. Configurar tu alerta de WhatsApp
+    tu_telefono = "521234567890"  # 👈 Pon tu número aquí (con código de país, sin el +)
+    
+    mensaje_texto = (
+        f"🚨 *ALERTA DE SISTEMA (ERROR 404)* 🚨\n\n"
+        f"Un usuario intentó entrar a una página que no existe.\n"
+        f"📍 *Ruta:* {url_fallida}\n"
+        f"⏰ *Fecha:* {fecha_hora}\n\n"
+        f"⚠️ Favor de revisar el código."
+    )
+    
+    # Codificamos el texto para que sea seguro para la URL (convierte espacios en %20, etc.)
+    mensaje_codificado = urllib.parse.quote(mensaje_texto)
+    link_whatsapp = f"https://whatsapp.com{tu_telefono}&text={mensaje_codificado}"
+    
+    # 3. Opcional: Guardarlo en tu SQLAlchemy si creaste la tabla de errores
+    # nuevo_error = ErrorSistema(url_fallida=url_fallida)
+    # db.session.add(nuevo_error)
+    # db.session.commit()
+    
+    # Pasamos el link al HTML
+    return render_template('404.html', whatsapp_url=link_whatsapp), 404

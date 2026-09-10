@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+body{margin:0;background:#0f0f0f;color:#fff;font-family:sans-serif}
+#map{height:60vh}
+.top{display:flex;gap:6px;padding:8px}
+.btn{padding:12px;border:0;border-radius:10px;font-weight:900}
+.card{background:#1e1e1e;margin:8px;padding:10px;border-radius:12px}
+</style>
+</head>
+<body>
+<div class="top">
+ <button onclick="setTipo('calle')" class="btn" style="flex:1;background:#222;color:#fff">🗺️ CALLE</button>
+ <button onclick="setTipo('sate')" class="btn" style="flex:1;background:#00ff88;color:#000">🛰️ SATELITE</button>
+ <a href="/logout" style="padding:12px;background:#ff4444;color:#fff;border-radius:10px;text-decoration:none">Salir</a>
+</div>
+<div id="map"></div>
+
+<div class="card">
+ <b>🚚 CHOFERES EN VIVO</b>
+ <div id="listaChoferes" style="margin-top:6px;font-size:13px"></div>
+ <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+  <button onclick="accion('inicio_ruta')" class="btn" style="background:#00ff88;color:#000">▶️ Entré</button>
+  <button onclick="accion('comida_inicio')" class="btn" style="background:#ffaa00">🍔 Comer</button>
+  <button onclick="accion('comida_fin')" class="btn" style="background:#00aaff">↩️ Regresé</button>
+  <button onclick="accion('fin_ruta')" class="btn" style="background:#ff4444;color:#fff">⏹️ Salí</button>
+ </div>
+</div>
+
+<div class="card">
+ <b>📦 SOLICITUDES PENDIENTES</b>
+ <div id="listaPedidos"></div>
+</div>
+
+<script>
+const PLANTA=[32.58115,-115.36780];
+let map=L.map('map').setView(PLANTA,14);
+let calle=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let sate=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+let labels=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png');
+let plantaM=L.marker(PLANTA).addTo(map).bindPopup("🏭 MICROLITA 1309").openPopup();
+let isSate=false;
+function setTipo(t){
+ if(t=='calle' && isSate){ map.removeLayer(sate); map.removeLayer(labels); map.addLayer(calle); isSate=false; }
+ if(t=='sate' &&!isSate){ map.removeLayer(calle); map.addLayer(sate); map.addLayer(labels); isSate=true; }
+}
+setTipo('sate');
+
+let markers={};
+async function cargarUbic(){
+ let r=await fetch('/api/ubicaciones'); let data=await r.json();
+ let html='';
+ data.forEach(u=>{
+  let id=u.chofer_id||u.id||u.nombre;
+  if(u.lat && (u.lng||u.lon)){
+   let lng=u.lng||u.lon;
+   if(!markers[id]) markers[id]=L.marker([u.lat,lng]).addTo(map);
+   else markers[id].setLatLng([u.lat,lng]);
+   markers[id].bindPopup(`🚚 ${id}<br>📍 ${u.lat.toFixed(5)}, ${lng.toFixed(5)}<br>⏱️ ${u.tiempo_parado||''}`);
+   html+=`🟢 ${id} - ${u.estado||'en ruta'} - parado: ${u.min_parado||0} min<br>`;
+  }
+ });
+ document.getElementById('listaChoferes').innerHTML=html||'Sin choferes conectados';
+}
+async function cargarPedidos(){
+ let r=await fetch('/api/solicitudes_pendientes'); let data=await r.json();
+ let html='';
+ data.forEach(p=>{
+  html+=`<div style="border-bottom:1px solid #333;padding:6px">📍 ${p.direccion||p.cliente}<br><small>${p.cantidad||1} tambos</small> <button onclick="asignar('${p.id}')" class="btn" style="padding:4px 8px;background:#00ff88;color:#000">Asignar</button></div>`;
+ });
+ document.getElementById('listaPedidos').innerHTML=html||'Sin pendientes';
+}
+function accion(tipo){ fetch('/api/accion/'+tipo,{method:'POST'}).then(()=>alert(tipo+' ok')); }
+function asignar(id){ fetch('/api/asignar/'+id,{method:'POST'}).then(()=>cargarPedidos()); }
+
+setInterval(()=>{cargarUbic(); cargarPedidos();},4000);
+cargarUbic(); cargarPedidos();
+</script>
+</body>
+</html>

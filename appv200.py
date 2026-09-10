@@ -7,34 +7,35 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'gota_manantial_secret_key_mexicali_2026'
-
+app.secret_key = os.environ.get('SECRET_KEY', 'gota_manantial_secret_key_mexicali_2026')
 db_url = os.environ.get('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-db_url = os.getenv('DATABASE_URL')
-if db_url and db_url.startswith('postgres://'):
-    db_url = db_url.replace('postgres://','postgresql://',1)
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True, "pool_recycle": 300, "connect_args": {"keepalives": 1, "keepalives_idle": 30}}
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-# ORIGINAL_LINE_ABAJO
-# = db_url or 'sqlite:///manantial.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///manantial.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
+from flask import Flask, render_template
 
-# ==================== MODELOS DE BASE DE DATOS ====================
+#@app.errorhandler(404)
+## Antes:
+#def pagina_no_encontrada(e):
+#    return render_template('404.html'), 404
 
+# Después:
+def pagina_no_encontrada(e):
+    return "<h1>404 - Pagina no encontrada</h1><a href='/'>Inicio</a>", 404
 class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
-    rol = db.Column(db.String(20), nullable=False) # 'admin', 'secretaria', 'chofer', 'sistemas'
+    rol = db.Column(db.String(20), nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
     tipo_pago = db.Column(db.String(20), default="Comisionista")
     precio_agua = db.Column(db.Float, default=16.0)
     valor_tarjeta = db.Column(db.Float, default=22.0)
+    lat = db.Column(db.Float, default=32.521)
+    lng = db.Column(db.Float, default=-115.367)
+    ultima_ubicacion = db.Column(db.DateTime)
 
 class ViajeChofer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -47,6 +48,8 @@ class Pedido(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     cliente = db.Column(db.String(100), nullable=False)
     direccion = db.Column(db.String(200), nullable=False)
+    lat = db.Column(db.Float, default=32.521)
+    lng = db.Column(db.Float, default=-115.367)
     cantidad = db.Column(db.Integer, default=1)
     precio = db.Column(db.Float, default=22.0)
     estado = db.Column(db.String(30), default="Pendiente")
@@ -93,8 +96,6 @@ class Solicitud(db.Model):
 with app.app_context():
     db.create_all()
 
-# ==================== FUNCIONES AUXILIARES ====================
-
 def calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
@@ -103,34 +104,34 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-def obtener_chofer_mas_cercano():
+def obtener_chofer_mas_cercano(p_lat=32.521, p_lng=-115.367):
     choferes = Usuario.query.filter_by(rol='chofer').all()
     if not choferes: return None
-    mas_cercano = None
-    min_dist = float('inf')
-    ref_lat, ref_lng = 32.6245, -115.452
-
+    cercano = None
+    min_d = float('inf')
     for ch in choferes:
-        last_loc = Ubicacion.query.filter_by(chofer_id=ch.id).order_by(Ubicacion.fecha.desc()).first()
-        if last_loc:
-            dist = calcular_distancia(ref_lat, ref_lng, last_loc.lat, last_loc.lng)
-            if dist < min_dist:
-                min_dist = dist
-                mas_cercano = ch.id
-
-    return mas_cercano or (choferes[0].id if choferes else None)
-
-# ==================== PLANTILLAS HTML ====================
+        ub = Ubicacion.query.filter_by(chofer_id=ch.id).order_by(Ubicacion.id.desc()).first()
+        if ub:
+            d = calcular_distancia(p_lat, p_lng, ub.lat, ub.lng)
+            if d < min_d:
+                min_d = d
+                cercano = ch.id
+    return cercano
 
 LOGIN_HTML = """
 <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;font-family:system-ui;background:#e0f7fa;display:flex;justify-content:center;align-items:center;height:100vh">
 <div style="background:white;padding:35px;border-radius:20px;width:360px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.1)">
-<img src="/logo.png" style="width:180px" onerror="this.outerHTML='<div style=\\'background:#0891b2;color:white;padding:12px;border-radius:12px;font-weight:bold\\'>💧 GOTA DE MANANTIAL<br><small style=\\'font-weight:normal\\'>Mexicali</small></div>'">
+<img src="/logo.png" style="width:180px" onerror="this.outerHTML='<div style=\\'background:#0891b2;color:white;padding:12px;border-radius:12px\\'>GOTA</div>'">
 <h2 style="margin:16px 0">GOTA DE MANANTIAL</h2>
 {% if error %}<div style="background:#fee2e2;color:#991b1b;padding:8px;border-radius:8px;margin-bottom:8px">{{error}}</div>{% endif %}
-<form method="post"><input name="username" placeholder="Usuario" required style="width:100%;padding:12px;margin:6px 0;border-radius:8px;border:1px solid #ccc;box-sizing:border-box"><input name="password" type="password" placeholder="Contraseña" required style="width:100%;padding:12px;margin:6px 0;border-radius:8px;border:1px solid #ccc;box-sizing:border-box"><button style="width:100%;padding:12px;background:#0891b2;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer">Entrar</button></form>
-</div></body>"""
+<form method="post">
+<input name="username" placeholder="Usuario" required style="width:100%;padding:12px;margin:6px 0;border-radius:8px;border:1px solid #ccc">
+<input name="password" type="password" placeholder="Contraseña" required style="width:100%;padding:12px;margin:6px 0;border-radius:8px;border:1px solid #ccc">
+<button type="submit" style="width:100%;padding:12px;background:#0891b2;color:white;border:none;border-radius:8px;margin-top:10px;font-weight:bold">ENTRAR</button>
+</form>
+</div></body>
+"""
 
 ADMIN_HTML = """
 <head>
@@ -144,46 +145,40 @@ ADMIN_HTML = """
 .dropdown a{display:block;padding:8px 12px;text-decoration:none;color:#333;font-size:13px}
 .dropdown a:hover{background:#f1f5f9}
 .admin-grid { display: grid; grid-template-columns: 1fr 380px; gap: 12px; }
-@media (max-width: 768px) { .admin-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {.admin-grid { grid-template-columns: 1fr; } }
 th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-size: 13px; }
 </style>
 </head>
 <body style="margin:0;font-family:system-ui;background:#f1f5f9">
-<div style="background:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:8px"><img src="/logo.png" style="height:38px" onerror="this.outerHTML='<b>💧 GOTA MXLI</b>'"><b>{{nombre}} ({{rol|upper}})</b></div><a href="/logout" style="color:red;font-weight:bold;text-decoration:none">Salir</a></div>
+<div style="background:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:8px"><img src="/logo.png" style="height:38px" onerror="this.outerHTML='<b>💧 GOTA DE MANANTIAL</b>'"><b>{{nombre}} ({{rol|upper}})</b></div><a href="/logout" style="color:red;font-weight:bold;text-decoration:none">Salir</a></div>
 <div class="admin-grid" style="padding:12px;max-width:1200px;margin:auto">
 <div>
-
-<!-- CONTROL DE CARGAS Y REGRESOS -->
 <div style="background:white;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 2px 4px rgba(0,0,0,0.05);border-left:5px solid #0891b2">
     <h3 style="margin-top:0;color:#0891b2">🚚 Control de Cargas y Inventario (Salida / Regreso)</h3>
-    <form action="/viaje/add_admin" method="post" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-        <select name="chofer_id" required style="padding:8px;border-radius:6px;border:1px solid #ccc">
-            <option value="">-- Seleccionar Chofer --</option>
-            {% for ch in choferes %}
-            <option value="{{ch.id}}">{{ch.nombre}}</option>
-            {% endfor %}
-        </select>
-        <input type="number" step="any" name="salida" placeholder="Cargó (Salida)" required style="width:100px;padding:8px;border-radius:6px;border:1px solid #ccc">
-        <input type="number" step="any" name="regreso" placeholder="Regresó" value="0" required style="width:90px;padding:8px;border-radius:6px;border:1px solid #ccc">
-        <button style="background:#0891b2;color:white;border:none;padding:8px 14px;border-radius:6px;font-weight:bold;cursor:pointer">Registrar Vuelta</button>
-    </form>
-
-    <!-- HISTORIAL DE CARGAS DEL DÍA -->
+<form action="/viaje/add_admin" method="post" style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center;margin-bottom:12px">
+    <select name="chofer_id" required style="padding:8px;border-radius:6px;border:1px solid #ccc;flex:1">
+        <option value="">-- Chofer --</option>
+        {% for ch in choferes %}
+        <option value="{{ch.id}}">{{ch.nombre}}</option>
+        {% endfor %}
+    </select>
+    <input type="number" name="salida" placeholder="Sal" value="0" style="width:55px;padding:8px;border-radius:6px;border:1px solid #ccc;text-align:center">
+    <input type="number" name="regreso" placeholder="Reg" value="0" style="width:55px;padding:8px;border-radius:6px;border:1px solid #ccc;text-align:center">
+    <button style="background:#0891b2;color:white;border:none;padding:8px 12px;border-radius:6px;font-weight:bold;cursor:pointer">💾</button>
+</form>
     <h4 style="margin:10px 0 6px 0;color:#334155;font-size:13px">📋 Historial de Cargas Registradas Hoy:</h4>
     <div style="max-height:150px;overflow-y:auto;background:#f8fafc;padding:8px;border-radius:8px;border:1px solid #e2e8f0">
         {% for v in viajes_hoy_todos %}
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid #eee">
             <span>👤 <b>{{dict.get(v.chofer_id, 'Chofer')}}</b> | Cargó: <b>{{v.salida}}</b> - Regresó: <b>{{v.regreso}}</b> (Vendió: <b style="color:#16a34a">{{v.salida - v.regreso}}</b>)</span>
             <a href="/viaje/borrar/{{v.id}}" onclick="return confirm('¿Borrar esta vuelta por equivocación?')" style="color:red;text-decoration:none;font-weight:bold;padding:2px 6px">❌ Borrar</a>
-        <button onclick="pararAlerta()" style="background:red;color:white;padding:10px;border-radius:8px;">🔇 Parar sonido 5 min</button>
         </div>
         {% else %}
         <p style="font-size:12px;color:#888;margin:0;text-align:center">No se han registrado cargas hoy.</p>
         {% endfor %}
+        <div style="text-align:center;margin-top:8px"><button onclick="pararAlerta()" style="background:red;color:white;padding:10px;border-radius:8px;">🔇 Parar sonido 5 min</button></div>
     </div>
 </div>
-
-<!-- RESUMEN / CORTE DIARIO -->
 <div style="background:white;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 2px 4px rgba(0,0,0,0.05)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <h3 style="margin:0;color:#0891b2">📊 Cortes Diarios de Choferes</h3>
@@ -192,17 +187,11 @@ th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-siz
             <button style="background:#0891b2;color:white;border:none;padding:5px 10px;border-radius:6px;font-weight:bold;cursor:pointer;font-size:12px">Filtrar</button>
         </form>
     </div>
-    
     <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse">
             <thead>
                 <tr style="background:#f8fafc;color:#475569">
-                    <th>Chofer</th>
-                    <th>Garrafones</th>
-                    <th>Ventas Total</th>
-                    <th>Gastos/Desc.</th>
-                    <th>Tar=jetas</th>
-                    <th>A Entregar Caja</th>
+                    <th>Chofer</th><th>Garrafones</th><th>Ventas Total</th><th>Gastos/Desc.</th><th>Tarjetas</th><th>A Entregar Caja</th>
                 </tr>
             </thead>
             <tbody>
@@ -216,47 +205,48 @@ th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-siz
                     <td><b style="color:#16a34a;font-size:15px">${{ c.caja }}</b></td>
                 </tr>
                 {% else %}
-                <tr><td colspan="6" st⅝yle="text-align:center;color:#666">No hay registros de cortes para esta fecha ({{ fecha_filtro }}).</td></tr>
-    S            {% endfor %}
+                <tr><td colspan="6" style="text-align:center;color:#666">No hay registros de cortes para esta fecha ({{ fecha_filtro }}).</td></tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
-
 <div style="background:white;border-radius:12px;padding:12px;margin-bottom:12px"><h3>Nuevo Pedido - Mexicali</h3><form action="/pedido/nuevo" method="post" style="display:flex;gap:6px;flex-wrap:wrap"><input name="cliente" placeholder="Cliente" required style="padding:8px;border:1px solid #ccc;border-radius:6px"><input name="direccion" placeholder="Dirección" required style="padding:8px;border:1px solid #ccc;border-radius:6px"><input name="cantidad" type="number" value="1" style="width:60px;padding:8px;border:1px solid #ccc;border-radius:6px"><input name="precio" type="number" value="22" style="width:60px;padding:8px;border:1px solid #ccc;border-radius:6px"><select name="chofer_id" style="padding:8px;border:1px solid #ccc;border-radius:6px"><option value="auto">🤖 Asignar Chofer Más Cercano</option>{% for ch in choferes %}<option value="{{ch.id}}">👤 {{ch.nombre}}</option>{% endfor %}</select><button style="background:#16a34a;color:white;border:none;padding:8px 14px;border-radius:6px;font-weight:bold;cursor:pointer">Agregar Pedido</button></form></div>
-
 <div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;padding:12px;margin-bottom:12px"><h3>Solicitudes de precio (Tambos)</h3>{% for s in solicitudes %}<div style="background:white;border:1px solid #fbbf24;padding:8px;border-radius:8px;margin-bottom:6px;font-size:13px"><b>{{s.cantidad}}x {{s.tamano}} ${{s.precio_estaba}}->${{s.precio_quedo}} = ${{s.diferencia}}</b><br>{{dict.get(s.chofer_id,'-')}} - {{s.direccion}} - {{s.motivo}}<br><a href="/autorizar/{{s.id}}" style="background:#16a34a;color:white;padding:5px 10px;border-radius:5px;text-decoration:none;display:inline-block;margin-top:4px">Aceptar</a> <a href="/rechazar/{{s.id}}" style="background:#dc2626;color:white;padding:5px 10px;border-radius:5px;text-decoration:none;display:inline-block;margin-top:4px">Rechazar</a></div>{% else %}<p style="font-size:13px;color:#666">Sin solicitudes pendientes</p>{% endfor %}</div>
-
 <div style="background:white;border-radius:12px;padding:12px"><h3>Pedidos Registrados</h3>
 {% for p in pedidos %}
-<div class="pedido-row"><span><b>{{p.cliente}}</b> - {{p.direccion}} - {{p.cantidad}}x ${{p.precio}} - 
-<b style="color:{% if p.estado=='Entregado' %}green{% elif p.estado=='No salio nadie' %}red{% else %}orange{% endif %}">{{p.estado}}</b> - 
+<div class="pedido-row"><span><b>{{p.cliente}}</b> - {{p.direccion}} - {{p.cantidad}}x ${{p.precio}} -
+<b style="color:{% if p.estado=='Entregado' %}green{% elif p.estado=='No salio nadie' %}red{% else %}orange{% endif %}">{{p.estado}}</b> -
 <span style="color:#0891b2">{{dict.get(p.chofer_id,'Sin asignar')}}</span></span>
 <div style="position:relative"><div class="menu-btn" onclick="toggleMenu({{p.id}})">⋮</div><div id="menu-{{p.id}}" class="dropdown"><a href="/pedido/entregar/{{p.id}}">✅ Entregado</a><a href="/pedido/no_salio/{{p.id}}">❌ No Salió Nadie</a><div style="border-top:1px solid #eee;padding:6px 12px;font-size:11px;color:#888">Reasignar a:</div>{% for ch in choferes %}<a href="/pedido/mover/{{p.id}}?chofer_id={{ch.id}}">👤 {{ch.nombre}}</a>{% endfor %}</div></div></div>
 {% endfor %}</div>
 </div>
-
 <div>
-<div style="background:white;border-radius:12px;padding:12px;margin-bottom:12px"><h3>Mapa Choferes Mexicali</h3><div id="map" style="height:320px;border-radius:8px"></div></div>
+<div style="background:white;border-radius:12px;padding:12px;margin-bottom:12px"><h3>Mapa Choferes Mexicali</h3><div id="map" style="height:350px; background:#e5e5e; margin-bottom: 15px;"></div>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('map').setView([32.581389, -115.371285], 15);
+var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19}).addTo(map);
+// Capa de nombres de calles encima del satelite
+var labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19}).addTo(map);
 
+var calle = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19});
+L.control.layers({"Híbrido (satelite + calles)": sat, "Calle": calle}).addTo(map);
+</script>
 <div style="background:white;border-radius:12px;padding:12px"><h3>Configurar Empleados</h3>
 {% if rol in ['admin', 'sistemas'] %}
 <form action="/usuario/nuevo" method="post" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">
 <input name="nombre" placeholder="Nombre" required style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px">
 <input name="username" placeholder="Usuario" required style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px">
 <input name="password" placeholder="Pass" required style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px">
-<select name="rol" style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px">
-    <option value="chofer">Chofer</option>
-    <option value="secretaria">Secretaria</option>
-    <option value="admin">Admin</option>
-</select>
+<select name="rol" style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px"><option value="chofer">Chofer</option><option value="secretaria">Secretaria</option><option value="admin">Admin</option></select>
 <select name="tipo_pago" style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px"><option value="Comisionista">Comisionista</option><option value="Sueldo">Sueldo Fijo</option></select>
 <input name="precio_agua" type="number" step="0.1" placeholder="$ Agua" style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px">
 <input name="valor_tarjeta" type="number" step="0.1" placeholder="$ Tarjeta" style="width:45%;padding:6px;border:1px solid #ccc;border-radius:6px">
 <button style="width:100%;margin-top:4px;background:#0891b2;color:white;border:none;padding:8px;border-radius:6px;font-weight:bold;cursor:pointer">Crear Empleado</button>
 </form>
 {% endif %}
-
 {% for u in usuarios %}
 <div style="border-bottom:1px solid #eee;padding:8px 0;font-size:12px">
 <b>{{u.nombre}} ({{u.rol|upper}})</b> - <i>{{u.tipo_pago}}</i><br>
@@ -270,7 +260,7 @@ th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-siz
     {% endif %}
     <a href="/mapa/detallado/{{u.id}}" style="color:#0891b2">📍 Ver Ruta GPS</a>
 {% endif %}
-{% if rol in ['admin', 'sistemas'] and u.username != 'sistemas' %}
+{% if rol in ['admin', 'sistemas'] and u.username!= 'sistemas' %}
  | <a href="/usuario/reset/{{u.id}}">Reset Pass</a> | <a href="/usuario/borrar/{{u.id}}" style="color:red">Baja</a>
 {% endif %}
 </div>
@@ -281,46 +271,47 @@ th, td { text-align: left; padding: 6px; border-bottom: 1px solid #ddd; font-siz
 <script>
 function toggleMenu(id){
   document.querySelectorAll('.dropdown').forEach(d=>{if(d.id!=='menu-'+id) d.style.display='none'});
-  var m=document.getElementById('menu-'+id); m.style.display = m.style.display==='block' ? 'none' : 'block';
+  var m=document.getElementById('menu-'+id); m.style.display = m.style.display==='block'? 'none' : 'block';
+var map = L.map('map', {center: [32.6245, -115.452], zoom: 13});
+
+var calle = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});
+
+var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19}).addTo(map);
+
+var baseMaps = {"Satelital": sat, "Calle": calle};
+L.control.layers(baseMaps).addTo(map);
+});
+
+L.control.layers({"Calles": calle, "Satélite": sat}, null, {position: 'topright'}).addTo(map);
+
 }
 document.addEventListener('click', function(e){ if(!e.target.classList.contains('menu-btn')){ if(!e.target.closest('.dropdown')) document.querySelectorAll('.dropdown').forEach(d=>d.style.display='none'); }});
-var map=L.map('map').setView([32.6245, -115.452],12);
-let calle = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19});
-let sate = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19});
-let labels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',{maxZoom:19});
-
-function setTipo(t){
-  map.eachLayer(l=>{ if(l!==plantaM) map.removeLayer(l); });
-  if(t=='calle'){ 
-    calle.addTo(map); 
-  } else { 
-    sate.addTo(map); 
-    labels.addTo(map); 
-  }
+function cargar(){fetch('/api/ubicaciones').then(r=>r.json()).then(d=>{d.forEach(c=>{ if(markers[c.id]) map.removeLayer(markers[c.id]); markers[c.id]=L.marker([c.lat,c.lng]).addTo(map).bindPopup(c.nombre) })})}
+cargar(); setInterval(cargar,10000);
+let ultimoTotalVisto = 0;
+let alertaActiva = true;
+function sonarAlertaAdmin(){
+  if (!alertaActiva) return;
+  let ctx = new (window.AudioContext || window.webkitAudioContext)();
+  let osc = ctx.createOscillator();
+  let gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = "triangle"; osc.frequency.value = 880;
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  osc.start(); osc.stop(ctx.currentTime + 0.5);
 }
-sate.addTo(map);
-labels.addTo(map);
-
-// Revisar si hay solicitudes pendientes cada 5 segundos
-setInterval(() => {
-    fetch('/api/solicitudes_pendientes')
-    .then(r => r.json())
-    .then(data => {
-        if (data.total > 0) {
-            sonarAlertaAdmin();
-            // Opcional: mostrar notificación nativa del navegador si da permiso
-            if (Notification.permission === "granted") {
-                new Notification("⚠️ Solicitud de Precio", { body: `Tienes ${data.total} solicitud(es) pendiente(s)` });
-            }
-        }
-    });
-}, 5000);
-
-// Solicitar permiso de notificaciones al tocar la pantalla
-document.addEventListener('click', () => {
-    if (Notification.permission === "default") Notification.requestPermission();
-}, { once: true });
-
+function pararAlerta(){
+  alertaActiva = false;
+  alert("Sonido pausado por 5 minutos");
+  setTimeout(()=>{alertaActiva=true;},300000);
+}
+setInterval(()=>{
+  fetch('/api/solicitudes_pendientes').then(r=>r.json()).then(data=>{
+    if (data.total > ultimoTotalVisto && data.total > 0){ sonarAlertaAdmin(); if (Notification.permission==="granted"){ new Notification("⚠️ Solicitud de Precio",{body:`Tienes ${data.total} solicitud(es) pendiente(s)`}); } }
+    ultimoTotalVisto = data.total;
+  });
+},5000);
+document.addEventListener('click', ()=>{ if (Notification.permission==="default") Notification.requestPermission(); }, {once:true});
 </script>
 </body>"""
 
@@ -328,23 +319,14 @@ CHOFER_HTML = """
 <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;font-family:system-ui;background:#f0fdf4">
 <audio id="alerta-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
-
 <div style="background:#fef9c3; border:2px solid #ca8a04; padding:8px; border-radius:8px; margin:10px; text-align:center;">
     <b>META SEMANAL:</b> <span style="font-size:16px; font-weight:bold; color:#a16207;">{{ garrafones_semana }} / 700</span>
 </div>
-
 <div style="background:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ddd">
     <div>
-        <b>{{nombre}}</b> (<i>{{tipo_pago}}</i>)<br>
-        <small style="color:#666">Agua: ${{precio_agua}} | Tarjeta: ${{valor_tarjeta}}</small><br>
-        <small style="color:#666">Corte Líquido Caja: <b style="color:#16a34a;font-size:16px">${{total_entrega_caja}}</b></small>
-    </div>
     <a href="/logout" style="color:red;text-decoration:none;font-weight:bold">Salir</a>
 </div>
-
 <div style="padding:12px;max-width:700px;margin:auto">
-
-<!-- VUELTAS REGISTRADAS POR OFICINA (INFORMATIVO) -->
 <div style="background: white; padding: 14px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left:6px solid #16a34a">
     <h3 style="margin-top:0; color:#16a34a">🚚 Cargas Asignadas Hoy (Oficina)</h3>
     <div style="font-size:13px; color:#444;">
@@ -358,8 +340,6 @@ CHOFER_HTML = """
         {% endfor %}
     </div>
 </div>
-
-<!-- MIS PEDIDOS ASIGNADOS -->
 <div style="background: white; padding: 14px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left:6px solid #0891b2">
     <h3 style="margin-top:0;color:#0891b2">🚚 Mis Pedidos Asignados (<span id="cant-pedidos">{{ pedidos|length }}</span>)</h3>
     <div id="contenedor-pedidos">
@@ -373,17 +353,13 @@ CHOFER_HTML = """
                 <a href="/pedido/entregar/{{p.id}}" style="background:#16a34a; color:white; padding:8px 12px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:12px; flex:1; text-align:center;">✅ Entregado</a>
                 <a href="/pedido/no_salio/{{p.id}}" style="background:#dc2626; color:white; padding:8px 12px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:12px; flex:1; text-align:center;">❌ No Salió Nadie</a>
             </div>
-            <a href="https://www.google.com/maps/search/?api=1&query={{ p.direccion | urlencode }}" target="_blank" style="background:#0284c7; color:white; padding:8px 12px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:12px; text-align:center; display:block; margin-top:6px;">
-                🗺️ Abrir Navegación GPS
-            </a>
+            <a href="https://www.google.com/maps/search/?api=1&query={{ p.direccion | urlencode }}" target="_blank" style="background:#0284c7; color:white; padding:8px 12px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:12px; text-align:center; display:block; margin-top:6px;">🗺️ Abrir Navegación GPS</a>
         </div>
         {% else %}
         <p style="color:#64748b; font-size:14px; text-align:center;">No tienes pedidos pendientes en este momento.</p>
         {% endfor %}
     </div>
 </div>
-
-<!-- RESUMEN CORTE DIARIO -->
 <div style="background: white; padding: 14px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
     <h3 style="margin-top:0;">📊 Resumen de Corte Hoy</h3>
     <div style="font-size:13px; line-height:1.8">
@@ -394,8 +370,6 @@ CHOFER_HTML = """
         <b>(=) Total a Entregar en Caja: <span style="color:#16a34a; font-size:16px">${{total_entrega_caja}}</span></b>
     </div>
 </div>
-
-<!-- REGISTRO DE TARJETAS PROMOCIONALES -->
 <div style="background: white; padding: 14px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left:6px solid #eab308">
     <h3 style="margin-top:0; color:#ca8a04">💳 Tarjetas Promocionales Recogidas</h3>
     <p style="font-size:12px; color:#666; margin-top:-8px">Cada tarjeta aplica ${{valor_tarjeta}} de descuento al corte.</p>
@@ -404,8 +378,6 @@ CHOFER_HTML = """
         <button style="width:30%; background:#eab308; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">Reportar</button>
     </form>
 </div>
-
-<!-- REGISTRO DE GASTOS Y DESCUENTOS -->
 <div style="background: white; padding: 14px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
     <h3 style="margin-top: 0; color: #dc2626;">⛽ Registrar Descuento / Gasto</h3>
     <form action="/descuento/add" method="post">
@@ -418,8 +390,6 @@ CHOFER_HTML = """
         <button style="width: 100%; padding: 12px; background: #dc2626; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Agregar Descuento</button>
     </form>
 </div>
-
-<!-- SOLICITUD DE PRECIO PARA TAMBOS -->
 <div style="background: white; padding: 14px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
     <h3 style="margin-top: 0; color: #0891b2;">🛢️ Solicitar Precio Especial (Tambos)</h3>
     <form action="/solicitar_precio" method="post">
@@ -434,9 +404,7 @@ CHOFER_HTML = """
         <button style="width: 100%; padding: 12px; background: #0891b2; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Solicitar Autorización</button>
     </form>
 </div>
-
 </div>
-
 <script>
 let ultimosPedidos = {{ pedidos|length }};
 setInterval(() => {
@@ -449,10 +417,9 @@ setInterval(() => {
         ultimosPedidos = data.length;
     });
 }, 7000);
-
 function iniciarGps() {
     if (!navigator.geolocation) return;
-    navigator.geolocation	=û[.watch<Position(pos => {
+    navigator.geolocation.watchPosition(pos => {
         fetch('/chofer/update_location', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -462,102 +429,56 @@ function iniciarGps() {
 }
 iniciarGps();
 </script>
-<div id="status" style="position:fixed;top:0;left:0;background:yellow;padding:10px;z-index:99999">GPS: esperando...</div>
-<script>
-function enviar(lat,lng){
- fetch('/api/ubicacion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:lat,lng:lng})})
- .then(r=>r.json()).then(d=>{document.getElementById('status').innerText='MANDANDO: '+lat+','+lng});
-}
-navigator.geolocation.watchPosition(p=>{enviar(p.coords.latitude,p.coords.longitude)},e=>{document.getElementById('status').innerText='ERROR GPS: '+e.message; alert(e.message)}, {enableHighAccuracy:true});
-</script>
 </body>"""
 
 MAPA_DETALLADO_HTML = """
 <!DOCTYPE html>
 <html>
-<head>		
-    <title>Mapa Detallado - {{ ch.nombre }}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1		2	%.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>#map { height: 90vh; width: 100%; }</style>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa Pedregal - {{ ch.nombre }}</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>body{margin:0} #map{height:100vh} .info{position:absolute;top:10px;left:50px;z-index:1000;background:white;padding:8px 12px;border-radius:8px;font-family:Arial}</style>
 </head>
-<body style="margin:0; font-family:system-ui;">
-    <div style="padding: 10px; background: #333; color: white;">
-        <h2>Recorrido de {{ ch.nombre }}</h2>
-        <a href="/panel" style="color: #38bdf8;">← Volver al panel</a>
-    </div>
-    <div id="map"></div>
-    <script>
-        var map = L.map('map').setView([32.6245, -115.452], 13);
-        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20 }).addTo(map);
-        var puntos = {{ puntos|tojson }};
-        var latlngs = puntos.map(p => [p.lat, p.lng]);
-        if(latlngs.length > 0) {
-            var polyline = L.polyline(latlngs, {color: 'blue'}).addTo(map);
-            map.fitBounds(polyline.getBounds());
-        }
-// SONIDO Y ALERTA PARA EL ADMIN
-let ultimoTotalVisto = 0;
-let alertaActiva = true;
+<body>
+<div class="info">🚚 {{ ch.nombre }} - Valle del Pedregal (Epicentro)<br><a href="/panel">Volver</a></div>
+<div id="map"></div>
+<script>
+var puntos = {{ puntos|tojson }};
+var map = L.map('map').setView([32.581389, -115.371285], 15);
+var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Esri'}).addTo(map);
+var labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19}).addTo(map);
 
-function sonarAlertaAdmin() {
-  if (!alertaActiva) return;
-  let ctx = new (window.AudioContext || window.webkitAudioContext)();
-  let osc = ctx.createOscillator();
-  let gain = ctx.createGain();
-  osc.connect(gain); gain.connect(ctx.destination);
-  osc.type = "triangle"; osc.frequency.value = 880;
-  gain.gain.setValueAtTime(0.1, ctx.currentTime);
-  osc.start(); osc.stop(ctx.currentTime + 0.5);
+if (puntos.length > 0){
+  var latlngs = puntos.map(p => [p.lat, p.lng]);
+  L.polyline(latlngs, {color: 'cyan', weight: 4}).addTo(map);
+  var last = puntos[puntos.length-1];
+  L.marker([last.lat, last.lng], {icon: L.divIcon({html:"🚚", className:"", iconSize:[30,30]})}).addTo(map).bindPopup("{{ ch.nombre }}");
+  map.setView([last.lat, last.lng], 16);
 }
-
-function pararAlerta() {
-  alertaActiva = false;
-  alert("Sonido pausado por 5 minutos");
-  setTimeout(() => { alertaActiva = true; }, 300000); // 5 min y vuelve a sonar
-}
-
-setInterval(() => {
-  fetch('/api/solicitudes_pendientes')
-  .then(r => r.json())
-  .then(data => {
-    // Solo suena si LLEGO UNA NUEVA, no por las viejas
-    if (data.total > ultimoTotalVisto && data.total > 0) {
-      sonarAlertaAdmin();
-    }
-    ultimoTotalVisto = data.total;
-  });
-}, 5000);
+</script>
 </body>
-</html>"""
-
-# ==================== MIDDLEWARES / DECORADORES ====================
-
+</html>
+"""
 def login_required(f):
     @wraps(f)
     def w(*a, **kw):
         if 'user_id' not in session: return redirect("/")
         return f(*a, **kw)
     return w
-
 def staff_required(f):
     @wraps(f)
     def w(*a, **kw):
-        if session.get('rol') not in ('admin', 'secretaria', 'sistemas'): 
-            return "No autorizado", 403
+        if session.get('rol') not in ('admin', 'secretaria', 'sistemas'): return "No autorizado", 403
         return f(*a, **kw)
     return w
-
 def admin_required(f):
     @wraps(f)
     def w(*a, **kw):
-        if session.get('rol') not in ('admin', 'sistemas'): 
-            return "No autorizado", 403
+        if session.get('rol') not in ('admin', 'sistemas'): return "No autorizado", 403
         return f(*a, **kw)
     return w
-
-# ==================== RUTAS DE LA APLICACIÓN ====================
 
 @app.route("/logo.png")
 def logo_file():
@@ -566,161 +487,89 @@ def logo_file():
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username_input = request.form.get('username', '').strip()
-        password_input = request.form.get('password', '').strip()
+        username = request.form.get("username")
+        password = request.form.get("password")
+        
+        u = Usuario.query.filter_by(username=username).first()
+        
+        if u and check_password_hash(u.password, password):
+            session['user_id']=u.id
+            session['rol']=u.rol
+            session['nombre']=u.nombre
 
-        u = Usuario.query.filter_by(username=username_input).first()
-        if u and check_password_hash(u.password, password_input):
-            session['user_id'] = u.id
-            session['rol'] = u.rol
-            session['nombre'] = u.nombre
-            session['username'] = u.username
-            return redirect("/panel")
-        return render_template_string(LOGIN_HTML, error="Usuario o contraseña incorrectos")
-    return render_template_string(LOGIN_HTML, error=None)
+            if 'granel' in u.username.lower():
+                return redirect("/panel_granel")
+
+            if u.rol == 'chofer':
+                return redirect("/panel_chofer")
+
+            if u.rol == 'granel':
+                return redirect("/panel_granel")
+
+            return redirect("/dashboard")
+
+    return render_template("login.html")
+@app.route('/panel_chofer')
+def panel_chofer():
+    if 'user_id' not in session:
+        return redirect("/")
+    return render_template_string(PANEL_CHOFER_HTML, nombre=session.get('nombre'))
+
+@app.route('/panel_granel')
+def panel_granel():
+    if 'user_id' not in session:
+        return redirect("/")
+    return render_template_string(PANEL_GRANEL_HTML, nombre=session.get('nombre'))
 
 @app.route('/panel')
 @login_required
 def panel():
-    rol = session.get('rol')
-    user_id = session.get('user_id')
-
+    rol = session.get('rol'); user_id = session.get('user_id')
     if rol in ['admin', 'secretaria', 'sistemas']:
         pedidos = Pedido.query.order_by(Pedido.id.desc()).all()
         choferes = Usuario.query.filter_by(rol='chofer').all()
         dict_choferes = {c.id: c.nombre for c in choferes}
-        
-        if session.get('username') == 'sistemas':
-            usuarios = Usuario.query.all()
-        else:
-            usuarios = Usuario.query.filter(Usuario.username != 'sistemas').all()
-
+        usuarios = Usuario.query.all() if session.get('username')=='sistemas' else Usuario.query.filter(Usuario.username!='sistemas').all()
         solicitudes_pend = Solicitud.query.filter_by(estado='Pendiente').all()
-
-        # 1. Primero se define la fecha del filtro
         fecha_filtro_str = request.args.get('fecha_filtro')
         if fecha_filtro_str:
-            try:
-                fecha_dt = datetime.strptime(fecha_filtro_str, '%Y-%m-%d').date()
-            except:
-                fecha_dt = date.today()
-                fecha_filtro_str = fecha_dt.strftime('%Y-%m-%d')
+            try: fecha_dt = datetime.strptime(fecha_filtro_str, '%Y-%m-%d').date()
+            except: fecha_dt = date.today(); fecha_filtro_str = fecha_dt.strftime('%Y-%m-%d')
         else:
-            fecha_dt = date.today()
-            fecha_filtro_str = fecha_dt.strftime('%Y-%m-%d')
-
-        # 2. AHORA SÍ consultamos los viajes de la fecha seleccionada
+            fecha_dt = date.today(); fecha_filtro_str = fecha_dt.strftime('%Y-%m-%d')
         viajes_hoy_todos = ViajeChofer.query.filter_by(fecha=fecha_filtro_str).all()
-
         cortes_choferes = []
         for ch in choferes:
-            precio_agua = ch.precio_agua or 16.0
             val_tarjeta = ch.valor_tarjeta or 22.0
-
-            vueltas = ViajeChofer.query.filter_by(chofer_id=ch.id, fecha=fecha_filtro_str).all()
-            garrafones_vueltas = sum(max(0, v.salida - v.regreso) for v in vueltas)
-            ventas_vueltas = garrafones_vueltas * precio_agua
-
-            ventas_pedidos = db.session.query(db.func.sum(Pedido.cantidad * Pedido.precio)).filter(
-                Pedido.chofer_id == ch.id,
-                Pedido.estado == 'Entregado',
-                db.func.date(Pedido.fecha) == fecha_dt
-            ).scalar() or 0.0
-
-            ventas_totales = ventas_vueltas + ventas_pedidos
-
-            gastos = db.session.query(db.func.sum(Descuento.total)).filter(
-                Descuento.chofer_id == ch.id,
-                Descuento.fecha == fecha_dt
-            ).scalar() or 0.0
-
-            tarjetas_cnt = db.session.query(db.func.sum(Tarjeta.cantidad)).filter(
-                Tarjeta.chofer_id == ch.id,
-                Tarjeta.fecha == fecha_dt
-            ).scalar() or 0
-
+            viajes_f = [v for v in viajes_hoy_todos if v.chofer_id==ch.id]
+            garrafones_vueltas = sum(max(0, v.salida - v.regreso) for v in viajes_f)
+            ventas_totales = garrafones_vueltas * (ch.precio_agua or 16.0)
+            gastos = db.session.query(db.func.sum(Descuento.total)).filter(Descuento.chofer_id==ch.id, Descuento.fecha==fecha_dt).scalar() or 0.0
+            tarjetas_cnt = db.session.query(db.func.sum(Tarjeta.cantidad)).filter(Tarjeta.chofer_id==ch.id, Tarjeta.fecha==fecha_dt).scalar() or 0
             tarjetas_monto = tarjetas_cnt * val_tarjeta
             caja = max(0.0, ventas_totales - gastos - tarjetas_monto)
-
-            cortes_choferes.append({
-                'nombre': ch.nombre,
-                'garrafones': garrafones_vueltas,
-                'ventas': ventas_totales,
-                'gastos': gastos,
-                'tarjetas_count': tarjetas_cnt,
-                'tarjetas_monto': tarjetas_monto,
-                'caja': caja
-            })
-
-        return render_template_string(
-            ADMIN_HTML,
-            pedidos=pedidos,
-            choferes=choferes,
-            dict=dict_choferes,
-            usuarios=usuarios,
-            rol=rol,
-            nombre=session.get('nombre'),
-            solicitudes=solicitudes_pend,
-            cortes=cortes_choferes,
-            fecha_filtro=fecha_filtro_str,
-            viajes_hoy_todos=viajes_hoy_todos
-        )
+            cortes_choferes.append({'nombre':ch.nombre,'garrafones':garrafones_vueltas,'ventas':ventas_totales,'gastos':gastos,'tarjetas_count':tarjetas_cnt,'tarjetas_monto':tarjetas_monto,'caja':caja})
+        return render_template_string(ADMIN_HTML, pedidos=pedidos, choferes=choferes, dict=dict_choferes, usuarios=usuarios, rol=rol, nombre=session.get('nombre'), solicitudes=solicitudes_pend, cortes=cortes_choferes, fecha_filtro=fecha_filtro_str, viajes_hoy_todos=viajes_hoy_todos)
     else:
-        usuario = db.session.get(Usuario, user_id)
-        hoy = date.today()
-        hoy_str = hoy.strftime('%Y-%m-%d')
-        precio_agua = usuario.precio_agua or 16.0
-        valor_tarjeta_chofer = usuario.valor_tarjeta or 22.0
-
+        usuario = db.session.get(Usuario, user_id); hoy = date.today(); hoy_str = hoy.strftime('%Y-%m-%d')
+        # Si es chofer de granel, mándalo a su formato especial
+        if 'granel' in usuario.username.lower() or 'granel' in (usuario.nombre or '').lower():
+            return render_template("panel_chofer_granel.html", usuario=usuario)       
+        precio_agua = usuario.precio_agua or 16.0; valor_tarjeta_chofer = usuario.valor_tarjeta or 22.0
         mis_pedidos = Pedido.query.filter_by(chofer_id=user_id, estado='Pendiente').all()
         viajes_hoy = ViajeChofer.query.filter_by(chofer_id=user_id, fecha=hoy_str).all()
-
         garrafones_vueltas_hoy = sum(max(0, v.salida - v.regreso) for v in viajes_hoy)
         ventas_vueltas_hoy = garrafones_vueltas_hoy * precio_agua
-
         hace_7_dias_str = (hoy - timedelta(days=7)).strftime('%Y-%m-%d')
-        viajes_semana = ViajeChofer.query.filter(
-            ViajeChofer.chofer_id == user_id,
-            ViajeChofer.fecha >= hace_7_dias_str
-        ).all()
+        viajes_semana = ViajeChofer.query.filter(ViajeChofer.chofer_id==user_id, ViajeChofer.fecha>=hace_7_dias_str).all()
         garrafones_semana = sum(max(0, v.salida - v.regreso) for v in viajes_semana)
-
-        ventas_pedidos_hoy = db.session.query(db.func.sum(Pedido.cantidad * Pedido.precio)).filter(
-            Pedido.chofer_id == user_id,
-            Pedido.estado == 'Entregado',
-            db.func.date(Pedido.fecha) == hoy
-        ).scalar() or 0.0
-
+        ventas_pedidos_hoy = db.session.query(db.func.sum(Pedido.cantidad*Pedido.precio)).filter(Pedido.chofer_id==user_id, Pedido.estado=='Entregado', db.func.date(Pedido.fecha)==hoy).scalar() or 0.0
         ventas_totales_hoy = ventas_vueltas_hoy + ventas_pedidos_hoy
-
-        total_descuentos = db.session.query(db.func.sum(Descuento.total)).filter(
-            Descuento.chofer_id == user_id,
-            Descuento.fecha == hoy
-        ).scalar() or 0.0
-
-        tarjetas_count = db.session.query(db.func.sum(Tarjeta.cantidad)).filter(
-            Tarjeta.chofer_id == user_id,
-            Tarjeta.fecha == hoy
-        ).scalar() or 0
-
+        total_descuentos = db.session.query(db.func.sum(Descuento.total)).filter(Descuento.chofer_id==user_id, Descuento.fecha==hoy).scalar() or 0.0
+        tarjetas_count = db.session.query(db.func.sum(Tarjeta.cantidad)).filter(Tarjeta.chofer_id==user_id, Tarjeta.fecha==hoy).scalar() or 0
         total_tarjetas = tarjetas_count * valor_tarjeta_chofer
         total_entrega_caja = max(0.0, ventas_totales_hoy - total_descuentos - total_tarjetas)
-
-        return render_template_string(
-            CHOFER_HTML,
-            nombre=session.get('nombre'),
-            tipo_pago=usuario.tipo_pago,
-            pedidos=mis_pedidos,
-            precio_agua=precio_agua,
-            valor_tarjeta=valor_tarjeta_chofer,
-            ventas_hoy=ventas_totales_hoy,
-            total_descuentos=total_descuentos,
-            tarjetas_count=tarjetas_count,
-            total_tarjetas=total_tarjetas,
-            total_entrega_caja=total_entrega_caja,
-            garrafones_semana=garrafones_semana,
-            viajes_hoy=viajes_hoy
-        )
+        return render_template_string(CHOFER_HTML, nombre=session.get('nombre'), tipo_pago=usuario.tipo_pago, pedidos=mis_pedidos, precio_agua=precio_agua, valor_tarjeta=valor_tarjeta_chofer, ventas_hoy=ventas_totales_hoy, total_descuentos=total_descuentos, tarjetas_count=tarjetas_count, total_tarjetas=total_tarjetas, total_entrega_caja=total_entrega_caja, garrafones_semana=garrafones_semana, viajes_hoy=viajes_hoy)
 
 @app.route("/viaje/add_admin", methods=["POST"])
 @login_required
@@ -728,14 +577,30 @@ def panel():
 def viaje_add_admin():
     try:
         chofer_id = int(request.form.get('chofer_id'))
-        salida = float(request.form.get('salida', 40))
-        regreso = float(request.form.get('regreso', 0))
+        salida = float(request.form.get('salida') or 0)
+        regreso = float(request.form.get('regreso') or 0)
         hoy_str = date.today().strftime('%Y-%m-%d')
 
-        v = ViajeChofer(chofer_id=chofer_id, fecha=hoy_str, salida=salida, regreso=regreso)
-        db.session.add(v)
+        # Buscar si ese chofer tiene una vuelta abierta hoy (sin regreso)
+        vuelta_abierta = ViajeChofer.query.filter_by(chofer_id=chofer_id, fecha=hoy_str).filter(ViajeChofer.regreso==0, ViajeChofer.salida>0).order_by(ViajeChofer.id.desc()).first()
+
+        if vuelta_abierta and salida == 0 and regreso > 0:
+            # CASO DE TU FOTO: quiere cerrar la vuelta
+            vuelta_abierta.regreso = regreso
+        elif vuelta_abierta and salida > 0 and regreso > 0:
+            # Si pone los dos, actualiza ambos
+            vuelta_abierta.salida = salida
+            vuelta_abierta.regreso = regreso
+        else:
+            # No hay vuelta abierta, crea nueva
+            if salida == 0 and regreso > 0: # si solo puso regreso, es error, lo tomamos como salida
+                salida = regreso
+                regreso = 0
+            v = ViajeChofer(chofer_id=chofer_id, fecha=hoy_str, salida=salida, regreso=regreso)
+            db.session.add(v)
         db.session.commit()
     except Exception as e:
+        print(e)
         db.session.rollback()
     return redirect("/panel")
 
@@ -745,166 +610,109 @@ def viaje_add_admin():
 def nuevo_pedido():
     try:
         cid = request.form.get('chofer_id')
+        plat = float(request.form.get('lat', 32.521))
+        plng = float(request.form.get('lng', -115.367))
         if cid == "auto" or not cid:
-            cid = obtener_chofer_mas_cercano()
+            cid = obtener_chofer_mas_cercano(plat, plng)
         else:
-            try: cid = int(cid)
-            except: cid = None
-
-        p = Pedido(
-            cliente=request.form['cliente'][:100],
-            direccion=request.form['direccion'][:200],
-            cantidad=max(1, int(request.form['cantidad'])),
-            precio=max(0, float(request.form.get('precio', 22))),
-            chofer_id=cid
-        )
-        db.session.add(p)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
+            try: cid=int(cid)
+            except: cid=None
+        p = Pedido(cliente=request.form['cliente'][:100], direccion=request.form['direccion'][:200], cantidad=max(1,int(request.form['cantidad'])), chofer_id=cid, lat=plat, lng=plng)
+        db.session.add(p); db.session.commit()
+    except: db.session.rollback()
     return redirect("/panel")
 
 @app.route("/pedido/mover/<int:id>")
 @login_required
 @staff_required
 def mover(id):
-    p = db.session.get(Pedido, id)
-    nc = request.args.get('chofer_id')
+    p=db.session.get(Pedido,id); nc=request.args.get('chofer_id')
     if p and nc is not None:
-        try:
-            nc = int(nc)
-            p.chofer_id = None if nc == 0 else nc
-            db.session.commit()
-        except:
-            db.session.rollback()
+        try: p.chofer_id=None if int(nc)==0 else int(nc); db.session.commit()
+        except: db.session.rollback()
     return redirect("/panel")
 
 @app.route("/viaje/borrar/<int:id>")
 @login_required
 @staff_required
 def borrar_viaje(id):
-    v = db.session.get(ViajeChofer, id)
-    if v:
-        db.session.delete(v)
-        db.session.commit()
+    v=db.session.get(ViajeChofer,id)
+    if v: db.session.delete(v); db.session.commit()
     return redirect("/panel")
 
 @app.route("/pedido/entregar/<int:id>")
 @login_required
 def entregar(id):
-    p = db.session.get(Pedido, id)
-    if p and (session['rol'] in ('admin', 'secretaria', 'sistemas') or p.chofer_id == session['user_id']):
-        p.estado = "Entregado"
-        db.session.commit()
+    p=db.session.get(Pedido,id)
+    if p and (session['rol'] in ('admin','secretaria','sistemas') or p.chofer_id==session['user_id']):
+        p.estado="Entregado"; db.session.commit()
     return redirect("/panel")
 
 @app.route("/pedido/no_salio/<int:id>")
 @login_required
 def no_salio(id):
-    p = db.session.get(Pedido, id)
-    if p and (session['rol'] in ('admin', 'secretaria', 'sistemas') or p.chofer_id == session['user_id']):
-        p.estado = "No salio nadie"
-        db.session.commit()
+    p=db.session.get(Pedido,id)
+    if p and (session['rol'] in ('admin','secretaria','sistemas') or p.chofer_id==session['user_id']):
+        p.estado="No salio nadie"; db.session.commit()
     return redirect("/panel")
 
 @app.route("/tarjeta/add", methods=["POST"])
 @login_required
 def tarjeta_add():
     try:
-        usuario = db.session.get(Usuario, session['user_id'])
-        v_tarjeta = usuario.valor_tarjeta if usuario else 22.0
-        cant = max(1, int(request.form.get('cantidad', 1)))
-        t = Tarjeta(chofer_id=session['user_id'], fecha=date.today(), cantidad=cant, monto_descuento=v_tarjeta)
-        db.session.add(t)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
+        u=db.session.get(Usuario,session['user_id']); v_t=u.valor_tarjeta if u else 22.0
+        t=Tarjeta(chofer_id=session['user_id'], fecha=date.today(), cantidad=max(1,int(request.form.get('cantidad',1))), monto_descuento=v_t)
+        db.session.add(t); db.session.commit()
+    except: db.session.rollback()
     return redirect("/panel")
 
 @app.route("/descuento/add", methods=["POST"])
 @login_required
 def desc_add():
     try:
-        d = Descuento(
-            chofer_id=session['user_id'],
-            fecha=date.today(),
-            tipo=request.form['tipo'][:20],
-            cantidad=max(1, int(request.form.get('cantidad', 1))),
-            tamano=request.form.get('tamano', '')[:200],
-            total=max(0, float(request.form.get('total', 0)))
-        )
-        db.session.add(d)
-        db.session.commit()
-    except:
-        db.session.rollback()
+        d=Descuento(chofer_id=session['user_id'], fecha=date.today(), tipo=request.form['tipo'][:20], cantidad=max(1,int(request.form.get('cantidad',1))), tamano=request.form.get('tamano','')[:200], total=max(0,float(request.form.get('total',0))))
+        db.session.add(d); db.session.commit()
+    except: db.session.rollback()
     return redirect("/panel")
 
 @app.route("/solicitar_precio", methods=["POST"])
 @login_required
 def solicitar_precio():
     try:
-        estaba = float(request.form.get('estaba', 0) or 0)
-        quedo = float(request.form.get('quedo', 0) or 0)
-        cant = max(1, int(request.form.get('cantidad', 1) or 1))
-        if quedo < 0 or quedo >= estaba:
-            return redirect("/panel")
-        dif = (estaba - quedo) * cant
-        s = Solicitud(
-            chofer_id=session['user_id'],
-            tamano=request.form.get('tamano', '')[:50],
-            cantidad=cant,
-            precio_estaba=estaba,
-            precio_quedo=quedo,
-            diferencia=dif,
-            direccion=request.form.get('direccion', '')[:200],
-            motivo=request.form.get('motivo', '')[:200]
-        )
-        db.session.add(s)
-        db.session.commit()
-    except:
-        db.session.rollback()
+        estaba=float(request.form.get('estaba',0) or 0); quedo=float(request.form.get('quedo',0) or 0); cant=max(1,int(request.form.get('cantidad',1) or 1))
+        if quedo <0 or quedo>=estaba: return redirect("/panel")
+        s=Solicitud(chofer_id=session['user_id'], tamano=request.form.get('tamano','')[:50], cantidad=cant, precio_estaba=estaba, precio_quedo=quedo, diferencia=(estaba-quedo)*cant, direccion=request.form.get('direccion','')[:200], motivo=request.form.get('motivo','')[:200])
+        db.session.add(s); db.session.commit()
+    except: db.session.rollback()
     return redirect("/panel")
 
 @app.route('/api/solicitudes_pendientes')
 @login_required
 def api_solicitudes_pendientes():
-    cant = Solicitud.query.filter_by(estado='Pendiente').count()
-    return jsonify({'total': cant})
+    return jsonify({'total': Solicitud.query.filter_by(estado='Pendiente').count()})
 
 @app.route('/api/mis_pedidos_count')
 @login_required
 def api_mis_pedidos_count():
-    user_id = session.get('user_id')
-    cant = Pedido.query.filter_by(chofer_id=user_id, estado='Pendiente').count()
-    return jsonify({'count': cant})
+    return jsonify({'count': Pedido.query.filter_by(chofer_id=session.get('user_id'), estado='Pendiente').count()})
 
 @app.route("/autorizar/<int:id>")
 @login_required
 @staff_required
 def autorizar(id):
-    s = db.session.get(Solicitud, id)
-    if s and s.estado == "Pendiente":
-        s.estado = "Autorizado"
-        d = Descuento(
-            chofer_id=s.chofer_id,
-            fecha=date.today(),
-            tipo="Descuento Tambo",
-            cantidad=s.cantidad,
-            tamano=f"{s.tamano} ${s.precio_estaba}->${s.precio_quedo} | {s.direccion}"[:200],
-            total=max(0, s.diferencia)
-        )
-        db.session.add(d)
-        db.session.commit()
+    s=db.session.get(Solicitud,id)
+    if s and s.estado=="Pendiente":
+        s.estado="Autorizado"
+        d=Descuento(chofer_id=s.chofer_id, fecha=date.today(), tipo="Descuento Tambo", cantidad=s.cantidad, tamano=f"{s.tamano} ${s.precio_estaba}->${s.precio_quedo} | {s.direccion}"[:200], total=max(0,s.diferencia))
+        db.session.add(d); db.session.commit()
     return redirect("/panel")
 
 @app.route("/rechazar/<int:id>")
 @login_required
 @staff_required
 def rechazar(id):
-    s = db.session.get(Solicitud, id)
-    if s:
-        s.estado = "Rechazado"
-        db.session.commit()
+    s=db.session.get(Solicitud,id)
+    if s: s.estado="Rechazado"; db.session.commit()
     return redirect("/panel")
 
 @app.route("/usuario/nuevo", methods=["POST"])
@@ -912,220 +720,93 @@ def rechazar(id):
 @admin_required
 def nuevo_usuario():
     try:
-        u = Usuario(
-            username=request.form['username'].strip()[:80],
-            password=generate_password_hash(request.form['password']),
-            rol=request.form['rol'],
-            nombre=request.form['nombre'][:100],
-            tipo_pago=request.form.get('tipo_pago', 'Comisionista'),
-            precio_agua=max(0, float(request.form.get('precio_agua', 16) or 16)),
-            valor_tarjeta=max(0, float(request.form.get('valor_tarjeta', 22) or 22))
-        )
-        db.session.add(u)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
+        u=Usuario(username=request.form['username'].strip()[:80], password=generate_password_hash(request.form['password']), rol=request.form['rol'], nombre=request.form['nombre'][:100], tipo_pago=request.form.get('tipo_pago','Comisionista'), precio_agua=max(0,float(request.form.get('precio_agua',16) or 16)), valor_tarjeta=max(0,float(request.form.get('valor_tarjeta',22) or 22)))
+        db.session.add(u); db.session.commit()
+    except: db.session.rollback()
     return redirect("/panel")
 
 @app.route("/usuario/actualizar_config/<int:id>", methods=["POST"])
 @login_required
 @admin_required
 def actualizar_config(id):
-    u = db.session.get(Usuario, id)
+    u=db.session.get(Usuario,id)
     if u:
-        u.precio_agua = max(0, float(request.form.get('precio_agua', 16) or 16))
-        u.valor_tarjeta = max(0, float(request.form.get('valor_tarjeta', 22) or 22))
-        db.session.commit()
-    return redirect("/panel")
+        u.precio_agua=max(0,float(request.form.get('precio_agua',16) or 16)); u.valor_tarjeta=max(0,float(request.form.get('valor_tarjeta',22) or 22)); db.session.commit()
+    return redirect("panel")
 
 @app.route("/usuario/borrar/<int:id>")
 @login_required
 @admin_required
 def borrar(id):
-    u = db.session.get(Usuario, id)
-    if u and u.username != 'sistemas' and u.id != session['user_id']:
-        db.session.delete(u)
-        db.session.commit()
+    u=db.session.get(Usuario,id)
+    if u and u.username!='sistemas' and u.id!=session['user_id']: db.session.delete(u); db.session.commit()
     return redirect("/panel")
 
 @app.route("/usuario/reset/<int:id>")
 @login_required
 @admin_required
 def reset(id):
-    u = db.session.get(Usuario, id)
-    if u and u.username != 'sistemas':
-        u.password = generate_password_hash('123456')
-        db.session.commit()
+    u=db.session.get(Usuario,id)
+    if u and u.username!='sistemas': u.password=generate_password_hash('123456'); db.session.commit()
     return redirect("/panel")
-
-@app.route('/mapa')
-def mapa():
-    return """</DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-</head>
-<body>
-<div class="top">
- <button onclick="setTipo('calle')" class="btn" style="background:#222;color:#fff">CALLE</button>
- <button onclick="setTipo('sate')" id="btnSate" class="btn" style="background:#00ff88;color:#000">SATELITE</button>
- <a href="/logout" class="btn" style="background:#ff4444;color:#fff;text-decoration:none;text-align:center;flex:0.5">Salir</a>
-</div>
-<div id="map"></div>
-<div class="card"><b>🚚 CHOFERES EN VIVO</b><div id="listaChoferes">Cargando...</div></div>
-<div class="card"><b>📦 PENDIENTES</b><div id="listaPedidos">Cargando...</div></div>
-<script>
-const PLANTA=[32.58115,-115.36780];
-let map=L.map('map').setView(PLANTA,15);
-let calle=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19});
-let sate=L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{maxZoom:20});
-sate.addTo(map);
-L.marker(PLANTA).addTo(map).bindPopup("🏭 PLANTA Microlita 1309").openPopup();
-let isSate=true;
-function setTipo(t){
- if(t=='calle'&&isSate){map.removeLayer(sate);calle.addTo(map);isSate=false;document.getElementById('btnSate').style.background='#222';document.getElementById('btnSate').style.color='#fff';}
- if(t=='sate'&&!isSate){map.removeLayer(calle);sate.addTo(map);isSate=true;document.getElementById('btnSate').style.background='#00ff88';document.getElementById('btnSate').style.color='#000';}
- setTimeout(()=>map.invalidateSize(),200);
-}
-let markers={};
-async function cargar(){
- try{
-  let r=await fetch('/api/ubicaciones'); let d=await r.json();
-  let html=''; d.forEach(u=>{
-   let id=u.chofer_id||u.id; let lat=u.lat; let lng=u.lng||u.lon;
-   if(lat&&lng){
-    if(!markers[id]) markers[id]=L.marker([lat,lng]).addTo(map);
-    else markers[id].setLatLng([lat,lng]);
-    markers[id].bindPopup(id);
-    html+=`🟢 ${id}<br>`;
-   }
-  });
-  document.getElementById('listaChoferes').innerHTML=html||'Sin choferes';
- }catch(e){}
-}
-async function cargar2(){
- try{
-  let r=await fetch('/api/solicitudes_pendientes'); let d=await r.json();
-  let h=''; d.forEach(p=>{h+=`<div>${p.cliente||p.direccion||'Cliente'} - ${p.cantidad||1} pzs</div>`;});
-  document.getElementById('listaPedidos').innerHTML=h||'Sin pendientes';
- }catch(e){}
-}
-setInterval(()=>{cargar();cargar2();},4000); cargar(); cargar2();
-</script>
-</body>
-</html>"""
 
 @app.route("/chofer/update_location", methods=["POST"])
 @login_required
 def up_loc():
-    d = request.json or {}
-    print(f"UBICACION RECIBIDA de {session.get('user_id')}: {d}") # para ver en Termux
+    d=request.json or {}
     try:
-        lat = float(d.get('lat'))
-        lng = float(d.get('lng'))
-        if -90 <= lat <= 90 and -180 <= lng <= 180:
-            db.session.add(Ubicacion(chofer_id=session['user_id'], lat=lat, lng=lng, fecha=datetime.now()))
-            db.session.commit()
-            print(f"GUARDADO OK {lat},{lng}")
-            return jsonify(ok=True)
-        else:
-            return jsonify(ok=False, error="coords fuera de rango"), 400
-    except Exception as e:
-        db.session.rollback()
-        print(f"ERROR UBICACION: {e}")
-        return jsonify(ok=False, error=str(e)), 400
+        lat=float(d.get('lat')); lng=float(d.get('lng'))
+        if -90<=lat<=90 and -180<=lng<=180:
+            db.session.add(Ubicacion(chofer_id=session['user_id'], lat=lat, lng=lng)); db.session.commit()
+    except: db.session.rollback()
+    return jsonify(ok=True)
 
 @app.route("/api/mis_pedidos")
 @login_required
 def mis_pedidos_api():
-    pedidos = Pedido.query.filter_by(chofer_id=session['user_id'], estado='Pendiente').all()
-    return jsonify([{'id': p.id, 'cliente': p.cliente} for p in pedidos])
+    pedidos=Pedido.query.filter_by(chofer_id=session['user_id'], estado='Pendiente').all()
+    return jsonify([{'id':p.id,'cliente':p.cliente} for p in pedidos])
 
 @app.route("/mapa/detallado/<int:chofer_id>")
 @login_required
 @staff_required
 def mapa_detallado(chofer_id):
-    ch = db.session.get(Usuario, chofer_id)
-    hoy = date.today()
-    puntos = Ubicacion.query.filter_by(chofer_id=chofer_id).filter(db.func.date(Ubicacion.fecha) == hoy).order_by(Ubicacion.fecha.asc()).all()
-    if not puntos:
-        puntos = Ubicacion.query.filter_by(chofer_id=chofer_id).order_by(Ubicacion.fecha.desc()).limit(50).all()
-        puntos = sorted(puntos, key=lambda x: x.fecha)
-    recorrido_coords = [{"lat": p.lat, "lng": p.lng} for p in puntos]
-    return render_template_string(MAPA_DETALLADO_HTML, chofer=ch, ch=ch, puntos=puntos, recorrido=recorrido_coords)
-
-# --- FIX UBICACION CHOFER ---
-ubicaciones_en_vivo = {}
-
-@app.route("/api/ubicacion", methods=["POST"])
-def api_ubicacion():
-    data = request.get_json()
-    if not data:
-        return "no data", 400
-    lat = data.get("lat")
-    lng = data.get("lng")
-    chofer_id = session.get("chofer_id") or data.get("chofer_id") or session.get("id")
-    if not chofer_id:
-        chofer_id = 1  # temporal si no hay sesion
-    
-    ubicaciones_en_vivo[str(chofer_id)] = {
-        "id": chofer_id,
-        "lat": float(lat),
-        "lng": float(lng),
-        "nombre": f"Chofer {chofer_id}",
-        "timestamp": __import__("time").time()
-    }
-    print(f"UBICACION RECIBIDA chofer {chofer_id}: {lat},{lng}")
-    return {"ok": True}
+    ch=db.session.get(Usuario, chofer_id); hoy=date.today()
+    puntos_q=Ubicacion.query.filter_by(chofer_id=chofer_id).filter(db.func.date(Ubicacion.fecha)==hoy).all()
+    puntos=[{"lat": float(p.lat), "lng": float(p.lng)} for p in puntos_q if p.lat and p.lng]
+    return render_template_string(MAPA_DETALLADO_HTML, chofer=ch, ch=ch, puntos=puntos)
 
 @app.route("/api/ubicaciones")
 @login_required
 def api_ubs():
-    data = []
+    data=[]
     for c in Usuario.query.filter_by(rol='chofer').all():
-        u = Ubicacion.query.filter_by(chofer_id=c.id).order_by(Ubicacion.fecha.desc()).first()
-        if u:
-            data.append({'id': c.id, 'nombre': c.nombre, 'lat': u.lat, 'lng': u.lng, 'hora': u.fecha.strftime('%H:%M')})
+        u=Ubicacion.query.filter_by(chofer_id=c.id).order_by(Ubicacion.fecha.desc()).first()
+        if u: data.append({'id':c.id,'nombre':c.nombre,'lat':u.lat,'lng':u.lng,'hora':u.fecha.strftime('%H:%M')})
     return jsonify(data)
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    return redirect("/")
+    session.clear(); return redirect("/")
 
-# ==================== INICIALIZACIÓN Y EJECUCIÓN ====================
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect('/')
+    return render_template('dashboard.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
 
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-        u = Usuario.query.filter_by(username='sistemas').first()
+        u=Usuario.query.filter_by(username='sistemas').first()
         if not u:
-            u = Usuario(
-                username='sistemas',
-                password=generate_password_hash("admin123"),
-                rol='sistemas',
-                nombre='Sistemas',
-                tipo_pago='Sueldo',
-                precio_agua=16,
-                valor_tarjeta=22
-            )
-            db.session.add(u)
-            db.session.commit()
+            u=Usuario(username='sistemas', password=generate_password_hash("admin123"), rol='sistemas', nombre='Sistemas', tipo_pago='Sueldo', precio_agua=16, valor_tarjeta=22)
+            db.session.add(u); db.session.commit()
         else:
-            u.password = generate_password_hash("admin123")
-            db.session.commit()
+            u.password=generate_password_hash("admin123"); db.session.commit()
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)), debug=True)
-
-
-@app.route('/health')
-def health():
-    from sqlalchemy import text
-    try:
-        db.session.execute(text('SELECT 1'))
-        return 'ok', 200
-    except Exception as e:
-        return f'waking: {e}', 200
